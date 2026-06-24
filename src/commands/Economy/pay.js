@@ -40,6 +40,19 @@ export default {
                 guildId
             });
 
+            // Check if user has the "🧠Smarties🧠" role
+            const member = await interaction.guild.members.fetch(senderId);
+            const smartiesRole = interaction.guild.roles.cache.find(role => role.name === '🧠Smarties🧠');
+            
+            if (!smartiesRole || !member.roles.has(smartiesRole.id)) {
+                throw createError(
+                    "Missing required role",
+                    ErrorTypes.VALIDATION,
+                    "Only members with the 🧠Smarties🧠 role can use this command.",
+                    { userId: senderId, requiredRole: '🧠Smarties🧠' }
+                );
+            }
+
             if (receiver.bot) {
                 throw createError(
                     "Cannot pay bot",

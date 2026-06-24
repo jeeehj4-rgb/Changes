@@ -1,162 +1,117 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { createEmbed, errorEmbed, successEmbed, infoEmbed, warningEmbed } from '../../utils/embeds.js';
-import { getEconomyData, addMoney, removeMoney, setEconomyData } from '../../utils/economy.js';
+import { successEmbed, errorEmbed } from '../../utils/embeds.js';
+import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
-import EconomyService from '../../services/economyService.js';
+
+// Helper function to check if user has Smarties role (ONLY Smarties)
+function isSmarties(member) {
+    if (!member) return false;
+    // Only check for Smarties role, no admin/staff bypass
+    return member.roles.cache.some(role => role.name === 'Smarties');
+}
 
 export default {
     data: new SlashCommandBuilder()
-        .setName('pay')
-        .setDescription('Pay another user some of your cash')
+        .setName('give')
+        .setDescription('Give money to a user (Smarties only, no cost to giver)')
         .addUserOption(option =>
             option
                 .setName('user')
-                .setDescription('User to pay')
+                .setDescription('The user to give money to')
                 .setRequired(true)
         )
         .addIntegerOption(option =>
             option
                 .setName('amount')
-                .setDescription('Amount to pay')
+                .setDescription('Amount of money to give')
                 .setRequired(true)
                 .setMinValue(1)
+        )
+        .addUserOption(option =>
+            option
+                .setName('recipient')
+                .setDescription('Optional: Give money to yourself or another user')
+                .setRequired(false)
         ),
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
         if (!deferred) return;
-            
-            const senderId = interaction.user.id;
-            const receiver = interaction.options.getUser("user");
-            const amount = interaction.options.getInteger("amount");
-            const guildId = interaction.guildId;
 
-            logger.debug(`[ECONOMY] Pay command initiated`, { 
-                senderId, 
-                receiverId: receiver.id,
-                amount,
-                guildId
-            });
+        const giver = await interaction.guild.members.fetch(interaction.user.id);
+        const isSmatiesUser = isSmarties(giver);
 
-            // Check if user has the "🧠Smarties🧠" role
-            const member = await interaction.guild.members.fetch(senderId);
-            const smartiesRole = interaction.guild.roles.cache.find(role => role.name === '🧠Smarties🧠');
-            
-            if (!smartiesRole || !member.roles.has(smartiesRole.id)) {
-                throw createError(
-                    "Missing required role",
-                    ErrorTypes.VALIDATION,
-                    "Only members with the 🧠Smarties🧠 role can use this command.",
-                    { userId: senderId, requiredRole: '🧠Smarties🧠' }
-                );
-            }
-
-            if (receiver.bot) {
-                throw createError(
-                    "Cannot pay bot",
-                    ErrorTypes.VALIDATION,
-                    "You cannot pay a bot.",
-                    { receiverId: receiver.id, isBot: true }
-                );
-            }
-            
-            if (receiver.id === senderId) {
-                throw createError(
-                    "Cannot pay self",
-                    ErrorTypes.VALIDATION,
-                    "You cannot pay yourself.",
-                    { senderId, receiverId: receiver.id }
-                );
-            }
-            
-            if (amount <= 0) {
-                throw createError(
-                    "Invalid payment amount",
-                    ErrorTypes.VALIDATION,
-                    "Amount must be greater than zero.",
-                    { amount, senderId }
-                );
-            }
-
-            const [senderData, receiverData] = await Promise.all([
-                getEconomyData(client, guildId, senderId),
-                getEconomyData(client, guildId, receiver.id)
-            ]);
-
-            if (!senderData) {
-                throw createError(
-                    "Failed to load sender economy data",
-                    ErrorTypes.DATABASE,
-                    "Failed to load your economy data. Please try again later.",
-                    { userId: senderId, guildId }
-                );
-            }
-            
-            if (!receiverData) {
-                throw createError(
-                    "Failed to load receiver economy data",
-                    ErrorTypes.DATABASE,
-                    "Failed to load the receiver's economy data. Please try again later.",
-                    { userId: receiver.id, guildId }
-                );
-            }
-
-            const result = await EconomyService.transferMoney(
-                client, 
-                guildId, 
-                senderId, 
-                receiver.id, 
-                amount
+        // Check if user has Smarties role (ONLY Smarties)
+        if (!isSmatiesUser) {
+            throw createError(
+                'Permission denied',
+                ErrorTypes.PERMISSION,
+                'Only **Smarties** members can use this command!',
+                { userId: interaction.user.id, guildId: interaction.guildId }
             );
+        }
 
-            const updatedSenderData = await getEconomyData(client, guildId, senderId);
-            const updatedReceiverData = await getEconomyData(client, guildId, receiver.id);
+        const recipient = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount');
+        const guildId = interaction.guildId;
 
-            const embed = successEmbed(
-                'Payment Successful',
-                `You successfully paid **${receiver.username}** the amount of **$${amount.toLocaleString()}**!`
-            )
-                .addFields(
-                    {
-                        name: "Payment Amount",
-                        value: `$${amount.toLocaleString()}`,
-                        inline: true,
-                    },
-                    {
-                        name: "Your New Balance",
-                        value: `$${updatedSenderData.wallet.toLocaleString()}`,
-                        inline: true,
-                    },
-                )
-                .setFooter({
-                    text: `Paid to ${receiver.tag}`,
-                    iconURL: receiver.displayAvatarURL(),
-                });
+        // Validate amount
+        if (amount <= 0) {
+            throw createError(
+                'Invalid amount',
+                ErrorTypes.VALIDATION,
+                'Amount must be greater than 0!',
+                { amount }
+            );
+        }
 
-            await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
+        // Get recipient data
+        const recipientData = await getEconomyData(client, guildId, recipient.id);
 
-            logger.info(`[ECONOMY] Payment sent successfully`, {
-                senderId,
-                receiverId: receiver.id,
-                amount,
-                senderBalance: updatedSenderData.wallet,
-                receiverBalance: updatedReceiverData.wallet
-            });
+        if (!recipientData) {
+            throw createError(
+                'Failed to load economy data',
+                ErrorTypes.DATABASE,
+                'Could not load recipient\'s economy data. Please try again later.',
+                { guildId }
+            );
+        }
 
-            try {
-                const receiverEmbed = createEmbed({ 
-                    title: "Incoming Payment!", 
-                    description: `${interaction.user.username} paid you **$${amount.toLocaleString()}**.` 
-                }).addFields({
-                    name: "Your New Cash",
-                    value: `$${updatedReceiverData.wallet.toLocaleString()}`,
+        // Add money to recipient WITHOUT deducting from giver
+        recipientData.wallet = (recipientData.wallet || 0) + amount;
+
+        // Save updated data
+        await setEconomyData(client, guildId, recipient.id, recipientData);
+
+        logger.info(`[ECONOMY_TRANSACTION] Admin give completed`, {
+            from: interaction.user.id,
+            to: recipient.id,
+            amount,
+            recipientNewBalance: recipientData.wallet,
+            guildId,
+            timestamp: new Date().toISOString()
+        });
+
+        const embed = successEmbed(
+            '💸 Money Given',
+            `${interaction.user.tag} gave **$${amount.toLocaleString()}** to ${recipient.tag}!`
+        )
+            .setColor('#00B050')
+            .addFields(
+                {
+                    name: `${recipient.tag}'s New Balance`,
+                    value: `$${recipientData.wallet.toLocaleString()}`,
                     inline: true,
-                });
-                await receiver.send({ embeds: [receiverEmbed] });
-            } catch (e) {
-                    logger.warn(`Could not DM user ${receiver.id}: ${e.message}`);
-            }
-    }, { command: 'pay' })
+                }
+            )
+            .setFooter({
+                text: 'Transaction completed (no cost to giver)',
+                iconURL: interaction.user.displayAvatarURL(),
+            })
+            .setTimestamp();
+
+        await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
+    }, { command: 'give' })
 };

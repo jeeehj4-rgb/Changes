@@ -8,7 +8,7 @@ import { validateDiscordId, validateNumber } from './validation.js';
 import { DEFAULT_ECONOMY_DATA } from './constants.js';
 
 const ECONOMY_CONFIG = BotConfig.economy || {};
-const BASE_BANK_CAPACITY = ECONOMY_CONFIG.baseBankCapacity || 10000;
+const BASE_BANK_CAPACITY = 1000000000000000000000000000000000000000000000000n; // 1e48
 const BANK_CAPACITY_PER_LEVEL = ECONOMY_CONFIG.bankCapacityPerLevel || 5000;
 const DAILY_AMOUNT = ECONOMY_CONFIG.dailyAmount || 100;
 const WORK_MIN = ECONOMY_CONFIG.workMin || 10;
@@ -34,20 +34,7 @@ export function getEconomyKey(guildId, userId) {
 export function getMaxBankCapacity(userData) {
     if (!userData) return BASE_BANK_CAPACITY;
     
-    const bankLevel = userData.bankLevel || 0;
-    let capacity = BASE_BANK_CAPACITY + (bankLevel * BANK_CAPACITY_PER_LEVEL);
-
-    const upgrades = userData.upgrades || {};
-    const inventory = userData.inventory || {};
-
-    if (upgrades['bank_upgrade_1']) {
-        capacity = Math.floor(capacity * 1.5);
-    }
-
-    const bankNotes = inventory['bank_note'] || 0;
-    capacity += (bankNotes * 10000);
-    
-    return capacity;
+    return BASE_BANK_CAPACITY;
 }
 
 export function formatCurrency(amount) {

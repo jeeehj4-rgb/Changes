@@ -74,29 +74,18 @@ export default {
             );
         }
 
-        // Check if giver has enough money
-        if (giverData.wallet < amount) {
-            throw createError(
-                'Insufficient funds',
-                ErrorTypes.VALIDATION,
-                `You only have $${giverData.wallet.toLocaleString()}, but you're trying to give $${amount.toLocaleString()}.`,
-                { required: amount, current: giverData.wallet }
-            );
-        }
-
-        // Transfer money
-        giverData.wallet -= amount;
+        // Transfer money without requiring giver to have funds
+        // (Smarties can give money without using their own balance)
         recipientData.wallet = (recipientData.wallet || 0) + amount;
 
-        // Save updated data
-        await setEconomyData(client, guildId, interaction.user.id, giverData);
+        // Save updated data (giver balance unchanged)
         await setEconomyData(client, guildId, recipient.id, recipientData);
 
         logger.info(`[ECONOMY_TRANSACTION] Money transferred`, {
             from: interaction.user.id,
             to: recipient.id,
             amount,
-            giverNewBalance: giverData.wallet,
+            giverBalance: giverData.wallet,
             recipientNewBalance: recipientData.wallet,
             guildId,
             timestamp: new Date().toISOString()

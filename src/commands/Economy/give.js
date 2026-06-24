@@ -5,17 +5,17 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { logger } from '../../utils/logger.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
-// Helper function to check if user has Smarties role
-function isSmartie(member) {
+// Helper function to check if user has Smarties role (ONLY Smarties)
+function isSmarties(member) {
     if (!member) return false;
-    // Checks if member has ADMINISTRATOR permission or Smarties/Admin roles
-    if (member.permissions.has('ADMINISTRATOR')) return true;
-    return member.roles.cache.some(role => ['Smarties', 'Admin', 'Staff'].includes(role.name));
+    // Only check for Smarties role, no admin/staff bypass
+    return member.roles.cache.some(role => role.name === 'Smarties');
 }
 
 export default {
     data: new SlashCommandBuilder()
-        .setName('give')\n        .setDescription('Give money to another user (Smarties only)')
+        .setName('give')
+        .setDescription('Give money to another user (Smarties only)')
         .addUserOption(option =>
             option
                 .setName('user')
@@ -35,10 +35,10 @@ export default {
         if (!deferred) return;
 
         const giver = await interaction.guild.members.fetch(interaction.user.id);
-        const isSmartie = isSmartie(giver);
+        const isSmatiesUser = isSmarties(giver);
 
-        // Check if user is Smarties
-        if (!isSmartie) {
+        // Check if user has Smarties role (ONLY Smarties)
+        if (!isSmatiesUser) {
             throw createError(
                 'Permission denied',
                 ErrorTypes.PERMISSION,

@@ -1,73 +1,64 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { createEmbed } from '../../utils/embeds.js';
-import { logger } from '../../utils/logger.js';
-import { handleInteractionError } from '../../utils/errorHandler.js';
+import { SlashCommandBuilder, ChannelType } from 'discord.js';
+import { infoEmbed } from '../../utils/embeds.js';
+import { withErrorHandling } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 export default {
     data: new SlashCommandBuilder()
-    .setName("serverinfo")
-    .setDescription("Get detailed information about the server"),
+        .setName('serverinfo')
+        .setDescription('Get information about the server'),
 
-  async execute(interaction) {
-    try {
-      const deferSuccess = await InteractionHelper.safeDefer(interaction);
-      if (!deferSuccess) {
-        logger.warn(`ServerInfo interaction defer failed`, {
-          userId: interaction.user.id,
-          guildId: interaction.guildId,
-          commandName: 'serverinfo'
-        });
-        return;
-      }
+    execute: withErrorHandling(async (interaction, config, client) => {
+        const deferred = await InteractionHelper.safeDefer(interaction);
+        if (!deferred) return;
 
-      const guild = interaction.guild;
-      const owner = await guild.fetchOwner();
+        const guild = interaction.guild;
+        await guild.fetch().catch(() => {});
 
-      const createdTimestamp = Math.floor(guild.createdAt.getTime() / 1000);
+        const textChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).size;
+        const voiceChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
+        const roles = guild.roles.cache.size;
 
-      const embed = createEmbed({ title: `Server Info: ${guild.name}`, description: `Server ID: ${guild.id}` })
-        .setThumbnail(guild.iconURL({ size: 256 }))
-        .addFields(
-          { name: "Owner", value: owner.user.tag, inline: true },
-          { name: "Members", value: `${guild.memberCount}`, inline: true },
-          {
-            name: "Channels",
-            value: `${guild.channels.cache.size}`,
-            inline: true,
-          },
-          { name: "Roles", value: `${guild.roles.cache.size}`, inline: true },
-          {
-            name: "Boosts",
-            value: `Level ${guild.premiumTier} (${guild.premiumSubscriptionCount})`,
-            inline: true,
-          },
-          {
-            name: "Creation Date",
-            value: `<t:${createdTimestamp}:R>`,
-            inline: true,
-          },
-        );
+        const embed = infoEmbed(
+            guild.name,
+            `Complete overview of ${guild.name}`
+        )
+            .setThumbnail(guild.iconURL({ dynamic: true }))
+            .addFields(
+                {
+                    name: '🆔 Server ID',
+                    value: guild.id,
+                    inline: true,
+                },
+                {
+                    name: '👥 Members',
+                    value: `${guild.memberCount} members`,
+                    inline: true,
+                },
+                {
+                    name: '📅 Created',
+                    value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`,
+                    inline: true,
+                },
+                {
+                    name: '💬 Text Channels',
+                    value: `${textChannels} channels`,
+                    inline: true,
+                },
+                {
+                    name: '🔊 Voice Channels',
+                    value: `${voiceChannels} channels`,
+                    inline: true,
+                },
+                {
+                    name: '🏷️ Roles',
+                    value: `${roles} roles`,
+                    inline: true,
+                }
+            )
+            .setColor('#5865F2')
+            .setTimestamp();
 
-      await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-      logger.info(`ServerInfo command executed`, {
-        userId: interaction.user.id,
-        guildId: guild.id,
-        guildName: guild.name,
-        memberCount: guild.memberCount
-      });
-    } catch (error) {
-      logger.error(`ServerInfo command execution failed`, {
-        error: error.message,
-        stack: error.stack,
-        userId: interaction.user.id,
-        guildId: interaction.guildId,
-        commandName: 'serverinfo'
-      });
-      await handleInteractionError(interaction, error, {
-        commandName: 'serverinfo',
-        source: 'serverinfo_command'
-      });
-    }
-  },
+        await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
+    }, { command: 'serverinfo' })
 };

@@ -22,14 +22,6 @@ const WORK_JOBS = [
     "Data Analyst",
 ];
 
-// Helper function to check if user is staff or admin
-function isStaffOrAdmin(member) {
-    if (!member) return false;
-    // Checks if member has ADMINISTRATOR permission or Staff/Admin roles
-    if (member.permissions.has('ADMINISTRATOR')) return true;
-    return member.roles.cache.some(role => ['Staff', 'Admin'].includes(role.name));
-}
-
 export default {
     data: new SlashCommandBuilder()
         .setName('work')
@@ -42,18 +34,6 @@ export default {
             const userId = interaction.user.id;
             const guildId = interaction.guildId;
             const now = Date.now();
-            const member = await interaction.guild.members.fetch(userId);
-            const userIsStaffOrAdmin = isStaffOrAdmin(member);
-
-            // Check if user is staff or admin
-            if (!userIsStaffOrAdmin) {
-                throw createError(
-                    "Permission denied",
-                    ErrorTypes.PERMISSION,
-                    "Only **Staff** and **Admin** members can use this command!",
-                    { userId, guildId }
-                );
-            }
 
             const userData = await getEconomyData(client, guildId, userId);
 
@@ -68,8 +48,28 @@ export default {
 
             logger.debug(`[ECONOMY] Work command started for ${userId}`, { userId, guildId });
 
+            const lastWork = userData.lastWork || 0;
             const inventory = userData.inventory || {};
+            const extraWorkShifts = inventory["extra_work"] || 0;
             const hasLaptop = inventory["laptop"] || 0;
+
+            let cooldownActive = now < lastWork + WORK_COOLDOWN;
+            let usedConsumable = false;
+
+            if (cooldownActive) {
+                if (extraWorkShifts > 0) {
+                    inventory["extra_work"] = (inventory["extra_work"] || 0) - 1;
+                    usedConsumable = true;
+                } else {
+                    const remaining = lastWork + WORK_COOLDOWN - now;
+                    throw createError(
+                        "Work cooldown active",
+                        ErrorTypes.RATE_LIMIT,
+                        `You're working too fast! Wait **${Math.floor(remaining / 3600000)}h ${Math.floor((remaining % 3600000) / 60000)}m** before working again.`,
+                        { timeRemaining: remaining, cooldownType: 'work' }
+                    );
+                }
+            }
 
             let earned = Math.floor(Math.random() * (MAX_WORK_AMOUNT - MIN_WORK_AMOUNT + 1)) + MIN_WORK_AMOUNT;
             const job = WORK_JOBS[Math.floor(Math.random() * WORK_JOBS.length)];
@@ -90,8 +90,8 @@ export default {
                 guildId,
                 amount: earned,
                 job,
+                usedConsumable,
                 hasLaptop: hasLaptop > 0,
-                isStaffOrAdmin: userIsStaffOrAdmin,
                 newWallet: userData.wallet,
                 timestamp: new Date().toISOString()
             });
@@ -107,8 +107,8 @@ export default {
                         inline: true,
                     },
                     {
-                        name: "Status",
-                        value: "No Cooldown ✅",
+                        name: "Next Work",
+                        value: `<t:${Math.floor((now + WORK_COOLDOWN) / 1000)}:R>`,
                         inline: true,
                     }
                 )
